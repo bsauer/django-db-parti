@@ -114,6 +114,9 @@ class RangePartition(Partition):
             DECLARE tablename TEXT;
             DECLARE columntype TEXT;
             DECLARE startdate TIMESTAMP;
+            DECLARE index_name TEXT;
+            DECLARE index_columns TEXT[];
+            DECLARE index_type TEXT;
             BEGIN
                 startdate := date_trunc('{partition_range}', NEW.{partition_column});
                 tablename := '{parent_table}_' || to_char(NEW.{partition_column}, '{partition_pattern}');
@@ -133,6 +136,31 @@ class RangePartition(Partition):
                     ) INHERITS ({parent_table});';
 
                     EXECUTE 'CREATE INDEX ' || tablename || '_{partition_column} ON ' || tablename || ' ({partition_column});';
+                    FOR ti in 
+                        SELECT i.relname as indname,
+                        i.relowner as indowner,
+                        idx.indrelid::regclass,
+                        am.amname as indam,
+                        idx.indkey,
+                        ARRAY(
+                        SELECT pg_get_indexdef(idx.indexrelid, k + 1, true)
+                        FROM generate_subscripts(idx.indkey, 1) as k
+                        ORDER BY k
+                        ) as indkey_names,
+                        idx.indexprs IS NOT NULL as indexprs,
+                        idx.indpred IS NOT NULL as indpred
+                        FROM   pg_index as idx
+                        JOIN   pg_class as i
+                        ON     i.oid = idx.indexrelid
+                        JOIN   pg_am as am
+                        ON     i.relam = am.oid
+                        JOIN   pg_namespace as ns
+                        ON     ns.oid = i.relnamespace
+                        AND    ns.nspname = ANY(current_schemas(false))
+                        where idx.indrelid::regclass = '{parent_table}'::regclass;
+                    LOOP
+                        EXECUTE 'CREATE INDEX ' || to_char(ti.indname, '{partition_pattern}') || ' ON ' || tablename || ' (' || ti.indkey_names || ') USING ' || ti.indam || ';';
+                    END LOOP;
                 END IF;
 
                 EXECUTE 'INSERT INTO ' || tablename || ' VALUES (($1).*);' USING NEW;
