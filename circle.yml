@@ -1,0 +1,21 @@
+general:
+  branches:
+    only:
+      - master
+
+machine:
+  timezone:
+    America/Los_Angeles
+  ruby:
+    version:
+      2.1.1
+
+dependencies:
+  post:
+    - gem install jekyll
+    - gem install redcarpet
+    - cd $HOME/$CIRCLE_PROJECT_REPONAME && jekyll build
+
+test:
+  override:
+    - echo "No tests are needed"
